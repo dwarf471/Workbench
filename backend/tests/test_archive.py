@@ -98,7 +98,7 @@ def test_online_backup_and_download(seeded, tmp_path):
         with sqlite3.connect(path) as restored:
             assert restored.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert restored.execute('SELECT COUNT(*) FROM messages').fetchone()[0] == 66
-            assert restored.execute('SELECT version_num FROM alembic_version').fetchone()[0] == '0002'
+            assert restored.execute('SELECT version_num FROM alembic_version').fetchone()[0] == '0004'
         download = client.get(f'/api/archive/backups/{filename}')
         assert download.status_code == 200 and download.content[:16] == b'SQLite format 3\x00'
         assert client.get('/api/archive/backups/setting_rong.json').status_code == 404

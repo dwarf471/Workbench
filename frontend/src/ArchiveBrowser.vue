@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { DatabaseBackup, Download, MessagesSquare, Search, UserRound, UsersRound, RefreshCw } from 'lucide-vue-next'
+import { DatabaseBackup, Download, MessagesSquare, Search, UserRound, UsersRound, RefreshCw, FileSearch } from 'lucide-vue-next'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from './api'
+import RequirementExtraction from './RequirementExtraction.vue'
+import RequirementLedger from './RequirementLedger.vue'
 type Conversation = { id: number; title: string; conversation_type: number; message_count?: number; latest_time_readable?: string; sync_status?: string }
 type Message = { id: number; conversation_id: number; conversation_title: string; conversation_type: number; source_id: number; sender_id: string; sender_name: string; sent_time_readable: string; message_type: string; text_content: string; content: Record<string, unknown> }
 const sources = ref<{id: number; label: string; account_key: string}[]>([])
@@ -26,6 +28,8 @@ const backupBusy = ref(false)
 const focusId = ref<number | null>(null)
 const backupFile = ref('')
 const lastQuery = ref('')
+const extractionScope = ref<{source_id: number; conversation_id: number; start_time: number; end_time: number} | null>(null)
+const extractor = ref<InstanceType<typeof RequirementExtraction> | null>(null)
 let messageRequest = 0
 let conversationRequest = 0
 let conversationDebounce: ReturnType<typeof setTimeout> | undefined
@@ -41,10 +45,18 @@ function messageParams() {
   if (mode.value === 'conversations' && selected.value) params.set('conversation_id', String(selected.value.id))
   if (q.value) params.set('q', q.value)
   if (sender.value) params.set('sender', sender.value)
-  if (range.value) { params.set('start_time', String(Number(range.value[0]))); params.set('end_time', String(Number(range.value[1]))) }
+  if (range.value) {
+    const start = new Date(Number(range.value[0]))
+    const end = new Date(Number(range.value[1]))
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+    params.set('start_time', String(start.getTime()))
+    params.set('end_time', String(end.getTime()))
+  }
   return params
 }
 async function loadMessages(focus?: number, reuseFilters = false) {
+  extractionScope.value = null
   const request = ++messageRequest
   if (mode.value === 'conversations' && !selected.value) { messages.value = []; messageTotal.value = 0; busy.value = false; return }
   busy.value = true
@@ -58,6 +70,9 @@ async function loadMessages(focus?: number, reuseFilters = false) {
     if (request !== messageRequest) return
     messages.value = data.list; messageTotal.value = data.total; messagePage.value = data.page
     lastQuery.value = params.toString()
+    if (params.has('source_id') && params.has('conversation_id') && params.has('start_time') && params.has('end_time')) {
+      extractionScope.value = { source_id: Number(params.get('source_id')), conversation_id: Number(params.get('conversation_id')), start_time: Number(params.get('start_time')), end_time: Number(params.get('end_time')) }
+    }
     await nextTick()
     if (focus) document.getElementById(`message-${focus}`)?.scrollIntoView({ block: 'center' })
   } catch (error) { if (request === messageRequest) { messages.value = []; messageTotal.value = 0; ElMessage.error((error as Error).message) } }
@@ -88,6 +103,7 @@ function clearFilters() { q.value = ''; sender.value = ''; range.value = null; a
 function choose(c: Conversation) { selected.value = c; messagePage.value = 1; focusId.value = null; loadMessages() }
 function switchMode() { messagePage.value = 1; focusId.value = null; loadMessages() }
 async function changeSource() {
+  extractionScope.value = null
   selected.value = null; messages.value = []; messageTotal.value = 0; conversationPage.value = 1; conversationQuery.value = ''; conversationType.value = 0
   conversations.value = []; conversationTotal.value = 0
   q.value = ''; sender.value = ''; range.value = null; focusId.value = null; messagePage.value = 1
@@ -144,6 +160,7 @@ onUnmounted(() => { ++messageRequest; ++conversationRequest; clearTimeout(conver
     <el-select v-model="sourceId" placeholder="当前来源（暂无归档）" aria-label="归档来源" @change="changeSource"><el-option v-for="source in sources" :key="source.id" :value="source.id" :label="`${source.label} / ${source.account_key}`"/></el-select>
     <el-radio-group v-model="mode" @change="switchMode"><el-radio-button value="conversations">会话浏览</el-radio-button><el-radio-button value="search">全局搜索</el-radio-button></el-radio-group>
     <el-button :loading="backupBusy" @click="backup"><DatabaseBackup :size="16"/>备份数据库</el-button>
+    <RequirementLedger/>
   </section>
   <p v-if="backupFile" class="backup-file">最新备份：{{backupFile}}</p>
   <div class="archive-layout" :class="{'search-layout': mode==='search'}">
@@ -157,11 +174,12 @@ onUnmounted(() => { ++messageRequest; ++conversationRequest; clearTimeout(conver
     </div>
     <div class="message-pane">
       <div class="pane-heading"><h2>{{mode==='search' ? '全局搜索' : selected?.title || '聊天记录'}}</h2><span class="muted">{{messageTotal}} 条</span></div>
-      <div class="message-filters"><el-input v-model="q" placeholder="消息关键词" clearable @keyup.enter="apply" @clear="apply"/><el-input v-model="sender" placeholder="发送者姓名或 ID" clearable @keyup.enter="apply" @clear="apply"/><el-date-picker v-model="range" type="datetimerange" value-format="x" start-placeholder="开始时间" end-placeholder="结束时间"/><div class="filter-actions"><el-button type="primary" @click="apply"><Search :size="16"/>查询</el-button><el-button @click="clearFilters">重置</el-button><el-dropdown @command="exportData"><el-button :disabled="!messageTotal || busy"><Download :size="16"/>导出</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="json">JSON</el-dropdown-item><el-dropdown-item command="csv">CSV</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div></div>
+      <div class="message-filters"><el-input v-model="q" placeholder="消息关键词" clearable @keyup.enter="apply" @clear="apply"/><el-input v-model="sender" placeholder="发送者姓名或 ID" clearable @keyup.enter="apply" @clear="apply"/><el-date-picker v-model="range" type="daterange" format="YYYY-MM-DD" value-format="x" start-placeholder="开始日期" end-placeholder="截止日期"/><div class="filter-actions"><el-button type="primary" @click="apply"><Search :size="16"/>查询</el-button><el-button @click="clearFilters">重置</el-button><el-dropdown @command="exportData"><el-button :disabled="!messageTotal || busy"><Download :size="16"/>导出</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="json">JSON</el-dropdown-item><el-dropdown-item command="csv">CSV</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div><el-button :disabled="mode!=='conversations' || !extractionScope || busy" :loading="extractor?.preparing" @click="extractor?.open()"><FileSearch :size="16"/>提取需求</el-button></div>
       <div v-if="busy" class="empty">加载中</div>
       <div v-else-if="!messages.length" class="empty"><MessagesSquare :size="28"/><span>{{mode==='conversations' && !selected ? '尚未选择会话' : '没有匹配消息'}}</span></div>
       <div v-else class="message-list"><article v-for="message in messages" :id="`message-${message.id}`" :key="message.id" class="message-row" :class="{focused:message.id===focusId}"><div class="message-meta"><strong>{{message.sender_name || message.sender_id || '未知发送者'}}</strong><time>{{message.sent_time_readable || '未提供可读时间'}}</time><span class="message-kind">{{kinds[message.message_type] || message.message_type}}</span></div><button v-if="mode==='search'" class="result-conversation" @click="locate(message)">{{message.conversation_title}} · 查看上下文</button><p v-if="message.text_content" class="message-text">{{message.text_content}}</p><p v-else class="message-text media-summary">{{mediaName(message) || kinds[message.message_type] || message.message_type}}</p><details v-if="message.message_type!=='TextMessage'"><summary>消息元信息</summary><pre>{{JSON.stringify(message.content, null, 2)}}</pre></details></article></div>
       <el-pagination v-if="messageTotal>50" v-model:current-page="messagePage" :page-size="50" :total="messageTotal" layout="prev, pager, next" @current-change="focusId=null; loadMessages(undefined,true)"/>
     </div>
   </div>
+  <RequirementExtraction ref="extractor" :scope="extractionScope" :source-id="sourceId" :conversation-id="mode==='conversations' ? selected?.id || null : null"/>
 </template>

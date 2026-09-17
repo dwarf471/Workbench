@@ -6,6 +6,9 @@ from contextlib import suppress
 from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -16,6 +19,9 @@ from .sync import has_active, recover_tasks, worker
 from .sync_api import router, mutation_lock
 from .archive import router as archive_router
 from .backup_api import router as backup_router
+from .llm import router as model_router
+from . import extraction
+from . import requirements
 
 
 @asynccontextmanager
@@ -23,19 +29,33 @@ async def lifespan(app):
     config = Config(str(ROOT / 'backend' / 'alembic.ini'))
     command.upgrade(config, 'head')
     recover_tasks()
+    extraction.recover_tasks()
+    await asyncio.to_thread(requirements.recover_export)
     background = asyncio.create_task(worker())
+    model_background = asyncio.create_task(extraction.worker())
     try:
         yield
     finally:
         background.cancel()
         with suppress(asyncio.CancelledError):
             await background
+        model_background.cancel()
+        with suppress(asyncio.CancelledError):
+            await model_background
         recover_tasks()
+        extraction.recover_tasks()
 
 
 app = FastAPI(title='个人工作台', lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 check_lock = asyncio.Lock()
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, error: RequestValidationError):
+    if request.url.path.startswith('/api/extraction'):
+        return JSONResponse({'detail': '提取请求无效，请检查会话、时间范围或候选字段长度'}, status_code=422)
+    return await request_validation_exception_handler(request, error)
 
 
 @app.middleware('http')
@@ -82,6 +102,9 @@ async def connection_check():
 app.include_router(router)
 app.include_router(archive_router)
 app.include_router(backup_router)
+app.include_router(model_router)
+app.include_router(extraction.router)
+app.include_router(requirements.router)
 mimetypes.init()
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('text/css', '.css')

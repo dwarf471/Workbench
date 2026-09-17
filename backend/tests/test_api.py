@@ -9,7 +9,7 @@ def test_health_and_migration(isolated_storage):
     with TestClient(app) as client:
         response = client.get('/api/health')
         assert response.status_code == 200
-        assert response.json()['database']['revision'] == '0002'
+        assert response.json()['database']['revision'] == '0004'
         assert 'sources' in inspect(isolated_storage).get_table_names()
         assert 'messages' in inspect(isolated_storage).get_table_names()
 

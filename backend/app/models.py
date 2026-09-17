@@ -60,6 +60,54 @@ class SyncTask(Base):
     error_code: Mapped[str] = mapped_column(String(50), default='')
 
 
+class ExtractionTask(Base):
+    __tablename__ = 'extraction_tasks'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey('sources.id'))
+    conversation_id: Mapped[int] = mapped_column(ForeignKey('conversations.id'))
+    start_time: Mapped[int] = mapped_column(Integer)
+    end_time: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default='draft')
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    config_json: Mapped[str] = mapped_column(Text)
+    candidates_json: Mapped[str] = mapped_column(Text, default='[]')
+    registration_json: Mapped[str] = mapped_column(Text, default='{}')
+    total_messages: Mapped[int] = mapped_column(Integer)
+    skipped_messages: Mapped[int] = mapped_column(Integer)
+    total_chunks: Mapped[int] = mapped_column(Integer)
+    completed_chunks: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str] = mapped_column(String(50), default='')
+    created_at: Mapped[str] = mapped_column(String(100), default=now_text)
+    updated_at: Mapped[str] = mapped_column(String(100), default=now_text)
+
+
+class RequirementRecord(Base):
+    __tablename__ = 'requirement_records'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dedup_key: Mapped[str] = mapped_column(String(64), unique=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey('extraction_tasks.id'))
+    candidate_id: Mapped[int] = mapped_column(Integer)
+    source_id: Mapped[int] = mapped_column(ForeignKey('sources.id'))
+    conversation_id: Mapped[int] = mapped_column(ForeignKey('conversations.id'))
+    account_key: Mapped[str] = mapped_column(String(100))
+    source_label: Mapped[str] = mapped_column(String(300))
+    conversation_title: Mapped[str] = mapped_column(String(300))
+    start_time: Mapped[int] = mapped_column(Integer)
+    end_time: Mapped[int] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(Text)
+    uncertainties: Mapped[str] = mapped_column(Text)
+    evidence_json: Mapped[str] = mapped_column(Text)
+    registered_at: Mapped[str] = mapped_column(String(100), default=now_text)
+    status: Mapped[str] = mapped_column(String(30), default='待评审')
+
+
+class RequirementExport(Base):
+    __tablename__ = 'requirement_export'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    exported_at: Mapped[str] = mapped_column(String(100), default=now_text)
+
+
 class SyncItem(Base):
     __tablename__ = 'sync_items'
     id: Mapped[int] = mapped_column(primary_key=True)
