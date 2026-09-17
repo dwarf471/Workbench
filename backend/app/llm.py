@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from .config import ROOT
+from .prompts import DEFAULT_EXTRACTION_PROMPT
 
 PATH = ROOT / 'data' / 'model.local.json'
 router = APIRouter(prefix='/api/model')
@@ -21,6 +22,15 @@ class ModelSettings(BaseModel):
     base_url: str = Field(default='', max_length=2000)
     model: str = Field(default='', max_length=200)
     timeout: int = Field(default=120, ge=5, le=300)
+    extraction_prompt: str = Field(default=DEFAULT_EXTRACTION_PROMPT, min_length=1, max_length=8000)
+
+    @field_validator('extraction_prompt')
+    @classmethod
+    def prompt_text(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError('Prompt cannot be empty')
+        return value
 
     @field_validator('base_url')
     @classmethod
@@ -99,6 +109,11 @@ def settings():
         raise HTTPException(500, '模型配置读取失败') from None
 
 
+@router.get('/prompt-default')
+def prompt_default():
+    return {'extraction_prompt': DEFAULT_EXTRACTION_PROMPT}
+
+
 @router.put('/settings')
 async def save(request: Request):
     async with lock:
@@ -106,9 +121,9 @@ async def save(request: Request):
             value = Update.model_validate(await request.json())
         except Exception:
             # Never echo validation inputs: they may contain the API key.
-            raise HTTPException(422, '配置无效：地址需为无凭证、查询参数和片段的 HTTP/HTTPS 地址；超时需为 5–300 秒') from None
+            raise HTTPException(422, '配置无效：检查 HTTP/HTTPS 地址、5–300 秒超时及非空且不超过 8000 字符的提示词') from None
         try:
-            _, encrypted = load()
+            previous, encrypted = load()
             key = value.api_key.get_secret_value() if value.api_key else ''
             if value.clear_key and key:
                 raise HTTPException(422, '不能同时填写和清除 API Key')
@@ -119,6 +134,8 @@ async def save(request: Request):
                     raise HTTPException(422, 'API Key 格式无效')
                 encrypted = base64.b64encode(protect(key.encode())).decode('ascii')
             saved = ModelSettings(**value.model_dump(exclude={'api_key', 'clear_key'}))
+            if 'extraction_prompt' not in value.model_fields_set:
+                saved.extraction_prompt = previous.extraction_prompt
             PATH.parent.mkdir(parents=True, exist_ok=True)
             temporary = PATH.with_suffix('.tmp')
             temporary.write_text(json.dumps({**saved.model_dump(), 'encrypted_key': encrypted}, ensure_ascii=False), encoding='utf-8')

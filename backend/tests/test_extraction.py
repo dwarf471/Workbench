@@ -261,3 +261,46 @@ def test_real_worker_user_cancellation_continues_serving(seeded, monkeypatch):
 
 
 original_worker = extraction.worker
+
+
+@pytest.mark.parametrize('merge', [False, True])
+def test_custom_prompt_reaches_model_and_keeps_contract(monkeypatch, merge):
+    original = httpx.AsyncClient
+    def handler(request):
+        instructions = json.loads(request.content)['messages'][0]['content']
+        assert instructions.startswith('只关注权限调整需求。')
+        assert '工作台固定约束' in instructions and 'evidence_ids' in instructions
+        assert ('本轮输入为分段候选' in instructions) is merge
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '{"requirements":[]}'}}]})
+    monkeypatch.setattr(extraction.httpx, 'AsyncClient', lambda **kwargs: original(**kwargs, transport=httpx.MockTransport(handler)))
+    assert asyncio.run(extraction.completion(llm.ModelSettings(base_url='https://example.com/v1', model='test',
+        extraction_prompt='只关注权限调整需求。'), '', [], set(), merge=merge)) == []
+
+
+def test_prompt_change_requires_new_confirmation(seeded):
+    with TestClient(app) as client:
+        task = prepared(client, seeded)
+        with Session(seeded['engine']) as db:
+            assert json.loads(db.get(ExtractionTask, task['id']).config_json)['extraction_prompt'] == llm.DEFAULT_EXTRACTION_PROMPT
+        assert client.put('/api/model/settings', json={'base_url': 'http://example.com/v1', 'model': 'test',
+            'extraction_prompt': '新的业务规则'}).status_code == 200
+        assert client.post(f'/api/extraction/tasks/{task["id"]}/start', json={'confirmed': True}).status_code == 409
+
+
+def test_running_task_keeps_prompt_when_settings_change(seeded, monkeypatch):
+    monkeypatch.setattr(extraction, 'CHUNK_CHARS', 500)
+    with Session(seeded['engine']) as db, db.begin():
+        for id in [seeded['ids'][1], seeded['ids'][2], seeded['ids'][4]]:
+            db.get(Message, id).text_content = '开发需求讨论' * 25
+    calls = []
+    async def fake(settings, encrypted, materials, allowed, merge=False):
+        calls.append(settings.extraction_prompt)
+        llm.PATH.write_text(json.dumps({'base_url': settings.base_url, 'model': settings.model, 'extraction_prompt': '运行中保存的新规则'}))
+        return [{'summary': '提取需求', 'uncertainties': '', 'evidence_ids': [min(allowed)]}]
+    monkeypatch.setattr(extraction, 'completion', fake)
+    with TestClient(app) as client:
+        task = prepared(client, seeded)
+        mark_running(seeded, task['id'])
+        asyncio.run(extraction.analyze(task['id']))
+        assert len(calls) > 1 and all(value == llm.DEFAULT_EXTRACTION_PROMPT for value in calls)
+        assert client.get(f'/api/extraction/tasks/{task["id"]}').json()['status'] == 'finished'

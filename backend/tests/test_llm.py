@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import llm
 from app.main import app
+from app.prompts import DEFAULT_EXTRACTION_PROMPT
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +32,7 @@ def test_config_and_key_lifecycle():
         assert response.status_code == 200
         assert response.json()['key_configured']
         assert 'fake-key' not in response.text
-        assert 'fake-key' not in llm.PATH.read_text()
+        assert 'fake-key' not in llm.PATH.read_text(encoding='utf-8')
         value.pop('api_key')
         assert client.put('/api/model/settings', json=value).json()['key_configured']
         assert 'encrypted_key' not in client.get('/api/model/settings').text
@@ -96,3 +97,23 @@ def test_corrupt_credentials_are_sanitized():
         response = client.post('/api/model/check')
         assert not response.json()['connected']
         assert 'broken' not in response.text
+
+
+def test_prompt_defaults_custom_roundtrip_and_omitted_field():
+    llm.PATH.write_text(json.dumps({'base_url': 'https://example.com/v1', 'model': 'test'}))
+    with TestClient(app) as client:
+        assert client.get('/api/model/settings').json()['extraction_prompt'] == DEFAULT_EXTRACTION_PROMPT
+        assert client.get('/api/model/prompt-default').json()['extraction_prompt'] == DEFAULT_EXTRACTION_PROMPT
+        custom = '优先提取权限调整需求。\n保留角色、资源和操作范围。'
+        assert client.put('/api/model/settings', json={'extraction_prompt': custom}).json()['extraction_prompt'] == custom
+        assert client.get('/api/model/settings').json()['extraction_prompt'] == custom
+        assert json.loads(llm.PATH.read_text(encoding='utf-8'))['extraction_prompt'] == custom
+        assert client.put('/api/model/settings', json={'model': 'new-model'}).json()['extraction_prompt'] == custom
+
+
+@pytest.mark.parametrize('prompt', ['', '  \n ', '中' * 8001, None], ids=['empty', 'whitespace', 'too-long', 'null'])
+def test_prompt_validation_does_not_echo_input(prompt):
+    with TestClient(app) as client:
+        response = client.put('/api/model/settings', json={'extraction_prompt': prompt, 'api_key': 'fake-key'})
+        assert response.status_code == 422
+        assert 'fake-key' not in response.text
