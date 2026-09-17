@@ -12,6 +12,7 @@ from .config import Settings, load_settings
 from .db import engine
 from .mcp_client import ToolFailure, call_tool
 from .models import Conversation, Message, Source, SyncItem, SyncTask, now_text
+from .user_directory import lookup_name
 
 ACTIVE = ('queued', 'running')
 ERRORS = {
@@ -137,7 +138,7 @@ def normalize_message(raw: dict, conversation: Conversation):
         identity = [raw['sentTime'], sender, safe.get('messageType'), safe.get('messageDirection'), content]
         key = 'hash:' + hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return {'conversation_id': conversation.id, 'dedup_key': key, 'sender_id': sender,
-            'sender_name': str(user.get('name') or '') if isinstance(user, dict) else '',
+            'sender_name': (str(user.get('name') or '').strip() if isinstance(user, dict) else '') or lookup_name(sender),
             'sent_time': raw['sentTime'], 'sent_time_readable': str(safe.get('sentTimeReadable') or ''),
             'message_type': str(safe.get('messageType') or ''), 'text_content': text,
             'content_json': json.dumps(safe, ensure_ascii=False, sort_keys=True)}

@@ -22,12 +22,15 @@ from .backup_api import router as backup_router
 from .llm import router as model_router
 from . import extraction
 from . import requirements
+from .user_directory import backfill_names
+from . import db
 
 
 @asynccontextmanager
 async def lifespan(app):
     config = Config(str(ROOT / 'backend' / 'alembic.ini'))
     command.upgrade(config, 'head')
+    backfill_names(db.engine)
     recover_tasks()
     extraction.recover_tasks()
     await asyncio.to_thread(requirements.recover_export)
