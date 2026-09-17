@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Cable, Database, LayoutDashboard, RefreshCw, Save, ShieldCheck, ListTodo, MessagesSquare, PlugZap } from 'lucide-vue-next'
+import { Cable, Database, LayoutDashboard, RefreshCw, Save, ShieldCheck, ListTodo, MessagesSquare, PlugZap, Menu } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import SyncManager from './SyncManager.vue'
 import ArchiveBrowser from './ArchiveBrowser.vue'
 import ModelSettings from './ModelSettings.vue'
 import { api } from './api'
 const tab = ref('archive')
+const navigationOpen = ref(false)
 const settings = ref({ account_key: 'default', account_label: '', mcp_url: '', settings_path: '' })
 const db = ref({ ready: false, revision: '', path: '' })
 const busy = ref(false)
@@ -37,10 +38,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="shell">
-    <aside><div class="brand"><LayoutDashboard :size="22"/><strong>我的工作台</strong></div><button class="nav" :class="{active:tab==='archive'}" @click="tab='archive'"><MessagesSquare :size="18"/>聊天归档</button><button class="nav" :class="{active:tab==='sync'}" @click="tab='sync'"><ListTodo :size="18"/>同步管理</button><button class="nav" :class="{active:tab==='settings'}" @click="tab='settings'"><Cable :size="18"/>连接设置</button><button class="nav" :class="{active:tab==='model'}" @click="tab='model'"><PlugZap :size="18"/>大模型设置</button><div class="local"><ShieldCheck :size="16"/>本机工作空间</div></aside>
+  <div class="shell" :class="{ 'navigation-open': navigationOpen }">
+    <button class="navigation-toggle" aria-label="工作空间菜单" :aria-expanded="navigationOpen" @click="navigationOpen = !navigationOpen"><Menu :size="20"/></button>
+    <aside class="workspace-sidebar"><div class="brand"><span class="brand-mark"><LayoutDashboard :size="20"/></span><strong>我的工作台</strong></div><div class="nav-label">工作空间</div><nav aria-label="工作空间"><button class="nav" :aria-current="tab==='archive' ? 'page' : undefined" :class="{active:tab==='archive'}" @click="tab='archive'"><MessagesSquare :size="18"/>聊天归档</button><button class="nav" :aria-current="tab==='sync' ? 'page' : undefined" :class="{active:tab==='sync'}" @click="tab='sync'"><ListTodo :size="18"/>同步管理</button><div class="nav-label settings-label">设置</div><button class="nav" :aria-current="tab==='settings' ? 'page' : undefined" :class="{active:tab==='settings'}" @click="tab='settings'"><Cable :size="18"/>连接设置</button><button class="nav" :aria-current="tab==='model' ? 'page' : undefined" :class="{active:tab==='model'}" @click="tab='model'"><PlugZap :size="18"/>大模型设置</button></nav><div class="local"><ShieldCheck :size="16"/>本机工作空间</div></aside>
     <main>
-      <header><div><span class="breadcrumb">工作台 / {{tab==='settings' || tab==='model' ? '系统设置' : '数据归档'}}</span><h1>{{tab==='model' ? '大模型设置' : tab==='sync' ? '同步管理' : tab==='archive' ? '聊天归档' : '连接设置'}}</h1></div><el-tag type="info" effect="plain">首版已验收</el-tag></header>
+      <header><div><span class="breadcrumb">工作台 / {{tab==='settings' || tab==='model' ? '系统设置' : '数据归档'}}</span><h1>{{tab==='model' ? '大模型设置' : tab==='sync' ? '同步管理' : tab==='archive' ? '聊天归档' : '连接设置'}}</h1></div><span class="workspace-badge"><ShieldCheck :size="14"/>本地工作台</span></header>
       <section class="status"><Database :size="22"/><div><strong>本地数据库</strong><p>{{db.ready ? 'SQLite 已就绪' : '等待数据库连接'}}</p></div><el-tag :type="db.ready ? 'success' : 'info'">{{db.ready ? '正常' : '未连接'}}</el-tag><div class="revision">迁移版本 <b>{{db.revision || '—'}}</b></div></section>
       <ArchiveBrowser v-if="tab==='archive'"/><SyncManager v-else-if="tab==='sync'"/><ModelSettings v-else-if="tab==='model'"/>
       <template v-else><section class="config"><div class="section-heading"><Cable :size="20"/><h2>新点即时通讯</h2></div>
