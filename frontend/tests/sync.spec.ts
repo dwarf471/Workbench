@@ -1,6 +1,51 @@
 import { test, expect } from '@playwright/test'
 
 for (const width of [1440, 390]) {
+  test(`discovery filters paginate the full list ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.route('**/api/archive/**', route => route.fulfill({ json: { list: [], total: 0, current_account_key: 'default' } }))
+    await page.route('**/api/sync/tasks*', route => route.fulfill({ json: { list: [], total: 0 } }))
+    const rows = Array.from({ length: 360 }, (_, i) => ({
+      conversation_type: i < 339 ? 1 : 3, target_id: `candidate-${i}`, title: `会话-${i}`,
+    }))
+    let requests = 0
+    await page.route('**/api/discovery/conversations?*', route => {
+      requests++
+      const url = new URL(route.request().url())
+      const current = Number(url.searchParams.get('page'))
+      const size = Number(url.searchParams.get('page_size'))
+      return route.fulfill({ json: { total: rows.length, list: rows.slice((current - 1) * size, current * size) } })
+    })
+    await page.goto('http://127.0.0.1:8765')
+    if (width === 390) await page.getByRole('button', { name: '工作空间菜单' }).click()
+    await page.getByRole('button', { name: '同步管理', exact: true }).click()
+    await page.getByRole('button', { name: '发现会话' }).click()
+    const pager = page.locator('.el-pagination').first()
+    await expect(pager.locator('.el-pager li').last()).toHaveText('18')
+    await page.locator('.candidate .el-checkbox').first().click()
+    await pager.locator('.el-pager li').last().click()
+    await expect(page.getByText('会话-359', { exact: true })).toBeVisible()
+    await page.locator('.discover-toolbar .el-radio-button').filter({ hasText: '群聊' }).click()
+    await expect(pager.locator('.el-pager li').last()).toHaveText('2')
+    await expect(pager.locator('.el-pager li.is-active')).toHaveText('1')
+    await expect(page.locator('.candidate')).toHaveCount(20)
+    await expect(page.getByText('会话-339', { exact: true })).toBeVisible()
+    await pager.locator('.el-pager li').last().click()
+    await expect(page.locator('.candidate')).toHaveCount(1)
+    await expect(page.getByText('会话-359', { exact: true })).toBeVisible()
+    await page.locator('.discover-toolbar .el-radio-button').filter({ hasText: '私聊' }).click()
+    await expect(pager.locator('.el-pager li').last()).toHaveText('17')
+    await expect(pager.locator('.el-pager li.is-active')).toHaveText('1')
+    await expect(page.getByRole('checkbox', { name: '选择 会话-0', exact: true })).toBeChecked()
+    await page.locator('.discover-toolbar .el-radio-button').filter({ hasText: '全部' }).click()
+    await expect(pager.locator('.el-pager li').last()).toHaveText('18')
+    expect(requests).toBe(8)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
+    await page.screenshot({ path: `../data/screenshots/sync-pagination-${width}.png`, fullPage: true })
+  })
+}
+
+for (const width of [1440, 390]) {
   test(`manual sync ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     const errors: string[] = []
@@ -27,6 +72,7 @@ for (const width of [1440, 390]) {
       }
     })
     await page.goto('http://127.0.0.1:8765')
+    if (width === 390) await page.getByRole('button', { name: '工作空间菜单' }).click()
     await page.getByRole('button', {name: '同步管理', exact: true}).click()
     await expect(page.getByRole('heading', {name: '同步管理'})).toBeVisible()
     await expect(page.getByRole('button', {name: '开始同步'})).toBeDisabled()

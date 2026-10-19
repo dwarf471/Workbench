@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Download, RefreshCw, Search, UserRound, UsersRound, X, Play } from 'lucide-vue-next'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from './api'
@@ -14,16 +14,17 @@ const discovering = ref(false)
 const submitting = ref(false)
 const keyword = ref('')
 const page = ref(1)
-const total = ref(0)
 const taskPage = ref(1)
 const taskTotal = ref(0)
-const searchMode = ref(false)
 const rangeMode = ref('30')
 const range = ref<[number, number] | null>(null)
 const confirmed = ref(false)
 const source = ref({ account_label: '', account_key: '' })
 const filterType = ref(0)
-const visible = computed(() => candidates.value.filter(c => !filterType.value || c.conversation_type === filterType.value))
+const filtered = computed(() => candidates.value.filter(c => !filterType.value || c.conversation_type === filterType.value))
+const total = computed(() => filtered.value.length)
+const visible = computed(() => filtered.value.slice((page.value - 1) * 20, page.value * 20))
+watch(filterType, () => { page.value = 1 })
 const statusNames: Record<string, string> = { queued: '等待中', running: '同步中', finished: '范围拉取结束', failed: '失败', cancelled: '已取消', interrupted: '已中断', warning: '需关注' }
 let timer: ReturnType<typeof setInterval> | undefined
 let polling = false
@@ -39,10 +40,21 @@ async function discover(search = false) {
   if (discovering.value) return
   discovering.value = true
   try {
-    searchMode.value = search
-    const data = await api(search ? `discovery/contacts?keyword=${encodeURIComponent(keyword.value.trim())}` : `discovery/conversations?page=${page.value}&page_size=20`)
-    candidates.value = data.list
-    total.value = search ? data.list.length : data.total
+    let rows: Candidate[]
+    if (search) {
+      const data = await api(`discovery/contacts?keyword=${encodeURIComponent(keyword.value.trim())}`)
+      rows = data.list
+    } else {
+      const data = await api('discovery/conversations?page=1&page_size=50')
+      rows = [...data.list]
+      const pages = Math.ceil(data.total / 50)
+      for (let next = 2; next <= pages; next++) {
+        const batch = await api(`discovery/conversations?page=${next}&page_size=50`)
+        rows.push(...batch.list)
+      }
+    }
+    candidates.value = rows
+    page.value = 1
     discovered.value = true
   } catch (error) { ElMessage.error((error as Error).message) }
   finally { discovering.value = false }
@@ -96,7 +108,7 @@ onUnmounted(() => { alive = false; clearInterval(timer) })
     <div v-if="!discovered" class="empty"><UsersRound :size="28"/><span>暂无来源会话</span></div>
     <div v-else-if="!visible.length" class="empty">未找到匹配会话</div>
     <div class="candidate-list"><div v-for="c in visible" :key="key(c)" class="candidate"><el-checkbox :model-value="selected.some(item => key(item) === key(c))" @change="(value: string | number | boolean) => choose(c, value)" :aria-label="`选择 ${c.title}`"/><component :is="c.conversation_type===3 ? UsersRound : UserRound" :size="20"/><div><strong>{{c.title}}</strong><small>{{c.conversation_type===3 ? '群聊' : '私聊'}} · {{c.target_id}}</small></div></div></div>
-    <el-pagination v-if="discovered && !searchMode && total>20" v-model:current-page="page" :page-size="20" :total="total" layout="prev, pager, next" @current-change="discover(false)"/>
+    <el-pagination v-if="discovered && total>20" v-model:current-page="page" :page-size="20" :total="total" layout="prev, pager, next"/>
   </section>
   <section>
     <div class="section-bar"><h2>同步范围</h2><span class="muted">已选 {{selected.length}} 个会话</span></div>
