@@ -63,6 +63,16 @@ async def validation_error(request: Request, error: RequestValidationError):
 
 @app.middleware('http')
 async def same_origin(request: Request, call_next):
+    if getattr(request.app.state, 'desktop_token', None):
+        from .desktop_http import guard
+        async def desktop_next(req):
+            response = await call_next(req)
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['Cache-Control'] = 'no-store'
+            response.headers['Referrer-Policy'] = 'no-referrer'
+            response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+            return response
+        return await guard(request, desktop_next)
     origin = request.headers.get('origin')
     if origin and origin not in ('http://127.0.0.1:8765', 'http://localhost:8765'):
         from fastapi.responses import JSONResponse

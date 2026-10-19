@@ -3,6 +3,7 @@ import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { DatabaseBackup, Download, MessagesSquare, Search, UserRound, UsersRound, RefreshCw, FileSearch } from 'lucide-vue-next'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from './api'
+import { saveDesktopFile } from './desktop'
 import RequirementExtraction from './RequirementExtraction.vue'
 import RequirementLedger from './RequirementLedger.vue'
 type Conversation = { id: number; title: string; conversation_type: number; message_count?: number; latest_time_readable?: string; sync_status?: string }
@@ -122,15 +123,17 @@ function mediaName(message: Message) {
   const content = message.content.content
   return typeof content === 'object' && content !== null && 'name' in content ? String(content.name) : ''
 }
-function download(url: string) {
+async function download(url: string, filename: string) {
+  if (await saveDesktopFile(url, filename) !== null) return
   const link = document.createElement('a')
   link.href = url; link.click()
 }
-function exportData(format: string) {
+async function exportData(format: string) {
   if (!messageTotal.value) return
   const params = new URLSearchParams(lastQuery.value)
   params.delete('page'); params.delete('page_size'); params.delete('focus_id'); params.set('format', format)
-  download(`/api/archive/export?${params}`)
+  try { await download(`/api/archive/export?${params}`, `聊天归档.${format}`) }
+  catch (error) { ElMessage.error((error as Error).message) }
 }
 async function backup() {
   if (backupBusy.value) return
@@ -139,7 +142,7 @@ async function backup() {
     await ElMessageBox.confirm('备份包含全部来源的归档聊天及同步任务，文件仅保存在本机。', '备份数据库', { confirmButtonText: '创建备份', cancelButtonText: '返回' })
     const data = await api('archive/backups', { method: 'POST' })
     backupFile.value = data.filename
-    download(`/api/archive/backups/${data.filename}`)
+    await download(`/api/archive/backups/${data.filename}`, data.filename)
     ElMessage.success('数据库备份已生成')
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error((error as Error).message) }
   finally { backupBusy.value = false }

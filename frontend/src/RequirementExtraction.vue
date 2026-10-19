@@ -170,7 +170,7 @@ defineExpose({ open, preparing })
   <el-dialog v-model="registrationOpen" title="确认登记需求" width="min(760px, calc(100vw - 24px))" :close-on-click-modal="false" :show-close="!registering" :close-on-press-escape="!registering">
     <template v-if="registrationPlan">
       <p class="extraction-wrap">预计新增 {{registrationPlan.added}} 项，重复跳过 {{registrationPlan.skipped}} 项</p>
-      <p class="extraction-wrap muted">data/requirements/需求清单.csv · 全部来源的统一清单</p>
+      <p class="extraction-wrap muted">工作台数据目录 / requirements / 需求清单.csv · 全部来源的统一清单</p>
       <article v-for="row in registrationPlan.rows" :key="row.id" class="requirement-row"><strong>候选 {{row.id}}</strong><p class="extraction-wrap">{{row.summary}}</p><p v-if="row.uncertainties" class="extraction-wrap muted">待确认：{{row.uncertainties}}</p><el-alert v-if="row.duplicate_id || row.duplicate_candidate_id" :title="`完全重复，将跳过（${row.duplicate_id || '候选 ' + row.duplicate_candidate_id}）`" type="info" :closable="false"/><template v-if="row.similar.length"><el-alert title="发现疑似相似需求，请核对；需要取消该项时返回修改勾选。" type="warning" :closable="false"/><p v-for="similar in row.similar" :key="similar.id" class="extraction-wrap muted">{{similar.id}}：{{similar.summary}}</p></template></article>
       <div class="confirm-row"><el-checkbox v-model="registrationConfirmed" :disabled="registering">已核对选中需求，确认备案；登记后本任务锁定，未勾选项不登记</el-checkbox></div>
     </template>

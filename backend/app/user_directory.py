@@ -5,10 +5,10 @@ from functools import lru_cache
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .config import ROOT
+from .paths import DATA
 from .models import Message
 
-PATH = ROOT / 'data' / 'Frame_User.csv'
+PATH = DATA / 'Frame_User.csv'
 
 
 @lru_cache(maxsize=1)

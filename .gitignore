@@ -7,3 +7,6 @@ frontend/test-results/
 frontend/playwright-report/
 data/
 workbench.local.json
+build/
+dist/
+.build-tools/

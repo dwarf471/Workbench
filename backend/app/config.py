@@ -1,18 +1,16 @@
 import json
-import os
 from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
-ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = ROOT / 'workbench.local.json'
+from .paths import ROOT, CONFIG_PATH, default_mcp_settings_path
 
 
 class Settings(BaseModel):
     account_key: str = Field(default='default', min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
     account_label: str = Field(default='我的新点账号', min_length=1, max_length=100)
     mcp_url: str = 'http://127.0.0.1:9527/mcp'
-    settings_path: str = str(Path(os.environ.get('APPDATA', '')) / 'EpointMsg' / 'setting_rong.json')
+    settings_path: str = Field(default_factory=default_mcp_settings_path)
 
     @field_validator('mcp_url')
     @classmethod
@@ -28,6 +26,8 @@ class Settings(BaseModel):
     @field_validator('settings_path')
     @classmethod
     def settings_file(cls, value: str) -> str:
+        if not value:
+            return value
         path = Path(value)
         if not path.is_absolute() or path.name != 'setting_rong.json':
             raise ValueError('请选择绝对路径的 setting_rong.json')

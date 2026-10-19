@@ -1,9 +1,8 @@
 from sqlalchemy import create_engine, event, text
 
-from .config import ROOT
+from .paths import DATA
 
-DATA = ROOT / 'data'
-DATA.mkdir(exist_ok=True)
+DATA.mkdir(parents=True, exist_ok=True)
 engine = create_engine(f'sqlite:///{(DATA / "workbench.sqlite3").as_posix()}')
 
 

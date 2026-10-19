@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { ClipboardList, Download, RefreshCw } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { api } from './api'
+import { saveDesktopFile } from './desktop'
 type Record = { id: string; registered_at: string; source_label: string; account_key: string; conversation_title: string; summary: string; uncertainties: string; status: string; task_id: number; evidence_ids: number[] }
 const open = ref(false)
 const rows = ref<Record[]>([])
@@ -31,6 +32,7 @@ async function rebuild() {
 async function download() {
   downloading.value = true
   try {
+    if (await saveDesktopFile('/api/extraction/requirements/file', '需求清单.csv') !== null) return
     const response = await fetch('/api/extraction/requirements/file')
     if (!response.ok) { const data = await response.json(); throw new Error(data.detail || 'CSV 下载失败') }
     const url = URL.createObjectURL(await response.blob())
@@ -44,7 +46,7 @@ async function download() {
   <el-button @click="show"><ClipboardList :size="16"/>需求清单</el-button>
   <el-dialog v-model="open" title="需求清单" width="min(1000px, calc(100vw - 24px))" :close-on-click-modal="false">
     <div class="ledger-heading"><span>{{total}} 项 · 全部来源</span><el-button title="刷新需求清单" aria-label="刷新需求清单" :loading="busy" @click="load"><RefreshCw :size="16"/></el-button></div>
-    <p class="ledger-path">data/requirements/需求清单.csv</p>
+    <p class="ledger-path">工作台数据目录 / requirements / 需求清单.csv</p>
     <el-alert :title="states[fileState] || fileState" :type="fileState==='ready' ? 'success' : 'warning'" :closable="false"/>
     <div v-if="busy" class="empty">加载中</div><div v-else-if="!rows.length" class="empty">暂无已登记需求</div>
     <article v-for="row in rows" :key="row.id" class="ledger-row"><div class="ledger-heading"><strong>{{row.id}}</strong><el-tag>{{row.status}}</el-tag></div><p class="ledger-summary">{{row.summary}}</p><p v-if="row.uncertainties" class="ledger-uncertainty">待确认：{{row.uncertainties}}</p><p class="muted">{{row.source_label}} / {{row.account_key}} · {{row.conversation_title}} · 任务 #{{row.task_id}} · 消息 {{row.evidence_ids.join('、')}}</p></article>

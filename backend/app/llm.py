@@ -1,19 +1,17 @@
 import asyncio
 import base64
-import ctypes
-from ctypes import wintypes
 import json
-import os
 from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
-from .config import ROOT
+from .paths import DATA
+from .credentials import protect
 from .prompts import DEFAULT_EXTRACTION_PROMPT
 
-PATH = ROOT / 'data' / 'model.local.json'
+PATH = DATA / 'model.local.json'
 router = APIRouter(prefix='/api/model')
 lock = asyncio.Lock()
 
@@ -58,35 +56,6 @@ class Update(ModelSettings):
     api_key: SecretStr | None = None
     clear_key: bool = False
 
-
-class Blob(ctypes.Structure):
-    _fields_ = [('size', wintypes.DWORD), ('data', ctypes.POINTER(ctypes.c_ubyte))]
-
-
-def protect(value: bytes, decrypt=False) -> bytes:
-    if os.name != 'nt':
-        raise RuntimeError('Windows credential protection required')
-    buffer = ctypes.create_string_buffer(value)
-    source = Blob(len(value), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte)))
-    output = Blob()
-    crypt = ctypes.WinDLL('crypt32', use_last_error=True)
-    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-    function = crypt.CryptUnprotectData if decrypt else crypt.CryptProtectData
-    function.argtypes = [ctypes.POINTER(Blob), ctypes.c_void_p, ctypes.c_void_p,
-                         ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(Blob)]
-    function.restype = wintypes.BOOL
-    kernel.LocalFree.argtypes = [ctypes.c_void_p]
-    kernel.LocalFree.restype = ctypes.c_void_p
-    # UI_FORBIDDEN prevents a credential operation from opening an interactive dialog.
-    if not function(ctypes.byref(source), None, None, None, None, 1, ctypes.byref(output)):
-        raise RuntimeError('Credential operation failed')
-    try:
-        return ctypes.string_at(output.data, output.size)
-    finally:
-        if decrypt:
-            ctypes.memset(output.data, 0, output.size)
-        kernel.LocalFree(output.data)
-        ctypes.memset(buffer, 0, len(value))
 
 
 def load():
@@ -144,7 +113,7 @@ async def save(request: Request):
         except HTTPException:
             raise
         except Exception:
-            raise HTTPException(500, '模型配置保存失败，请检查本地文件和 Windows 凭证保护') from None
+            raise HTTPException(500, '模型配置保存失败，请检查本地文件和系统凭证保护') from None
 
 
 @router.post('/check')

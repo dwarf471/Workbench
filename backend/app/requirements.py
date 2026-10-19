@@ -234,7 +234,7 @@ def records(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)
             total = db.scalar(select(func.count()).select_from(RequirementRecord))
             rows = db.scalars(select(RequirementRecord).order_by(RequirementRecord.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
             return {'total': total, 'list': [serialize(row) for row in rows], 'file_state': file_state(db, csv_bytes(db)),
-                    'filename': FILENAME, 'path': 'data/requirements/' + FILENAME}
+                    'filename': FILENAME, 'path': str(DATA / 'requirements' / FILENAME)}
     except Exception:
         raise HTTPException(500, '需求清单读取失败') from None
 
